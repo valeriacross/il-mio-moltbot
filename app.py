@@ -18,8 +18,6 @@ def avvia_bot():
     try:
         # Configurazione Google
         genai.configure(api_key=G_KEY)
-        
-        # USARE ESATTAMENTE QUESTO NOME (senza -latest o versioni beta)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         bot = telebot.TeleBot(T_TOKEN)
@@ -38,10 +36,12 @@ def avvia_bot():
         # Pulisce vecchie sessioni
         bot.delete_webhook()
         stampa("--- ✅ BOT PRONTO E IN ASCOLTO ---")
-        bot.infinity_polling(skip_pending_updates=True)
         
-    except Exception as e_critico:
-        stampa(f"--- ❌ ERRORE CRITICO: {e_critico} ---")
+        # ABBIAMO TOLTO IL COMANDO CHE DAVA ERRORE QUI SOTTO:
+        bot.infinity_polling()
+        
+    except Exception as e:
+        stampa(f"--- ❌ ERRORE CRITICO: {e} ---")
 
 # Lancio parallelo
 threading.Thread(target=avvia_bot, daemon=True).start()
