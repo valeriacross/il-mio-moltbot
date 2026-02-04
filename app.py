@@ -11,8 +11,9 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 def avvia_bot():
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        # Usiamo il nome completo del modello per sicurezza
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        
+        # CAMBIATO: Usiamo il nome più compatibile in assoluto
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         bot = telebot.TeleBot(TELEGRAM_TOKEN)
         bot.delete_webhook()
@@ -20,13 +21,11 @@ def avvia_bot():
         @bot.message_handler(func=lambda m: True)
         def rispondi(m):
             try:
-                # Proviamo a generare la risposta
                 response = model.generate_content(m.text)
                 bot.reply_to(m, response.text)
             except Exception as e:
-                # QUESTA RIGA TI DIRÀ IL VERO PROBLEMA SU TELEGRAM:
+                # Ci scriverà l'errore se il modello ha ancora problemi
                 bot.reply_to(m, f"⚠️ DEBUG ERRORE: {e}")
-                print(f"Errore tecnico: {e}", flush=True)
 
         print("--- ✅ BOT IN ASCOLTO ---", flush=True)
         bot.infinity_polling()
