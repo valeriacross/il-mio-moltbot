@@ -4,33 +4,52 @@ import google.generativeai as genai
 import threading
 import gradio as gr
 
-# Recupero chiavi
-T_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-G_KEY = os.environ.get("GOOGLE_API_KEY")
+# Recupero delle chiavi dalle variabili d'ambiente
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 def avvia_bot():
     try:
-        # Configurazione con la NUOVA chiave
-        genai.configure(api_key=G_KEY)
+        # Configurazione Google Gemini
+        genai.configure(api_key=GOOGLE_API_KEY)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        bot = telebot.TeleBot(T_TOKEN)
-        bot.delete_webhook() # Pulisce eventuali conflitti 409
-
+        # Configurazione Telegram
+        bot = telebot.TeleBot(TELEGRAM_TOKEN)
+        
+        # Rimuove eventuali webhook precedenti per evitare errori 409
+        bot.delete_webhook()
+        
         @bot.message_handler(func=lambda m: True)
         def rispondi(m):
             try:
-                # Se la chiave è nuova, questo DEVE funzionare
-                res = model.generate_content(m.text)
-                bot.reply_to(m, res.text)
+                # Generazione della risposta con Gemini
+                response = model.generate_content(m.text)
+                bot.reply_to(m, response.text)
             except Exception as e:
-                bot.reply_to(m, f"Errore Google: {e}")
+                bot.reply_to(m, "In questo momento non riesco a elaborare la richiesta. Riprova tra poco.")
+                print(f"Errore Gemini: {e}")
 
-        print("--- ✅ BOT ONLINE CON NUOVA CHIAVE ---")
+        print("Bot in ascolto su Telegram...")
         bot.infinity_polling()
+        
     except Exception as e:
-        print(f"--- ❌ ERRORE AVVIO: {e} ---")
+        print(f"Errore critico all'avvio: {e}")
 
-# Lancio thread e interfaccia
+# Avvio del bot in un thread separato
 threading.Thread(target=avvia_bot, daemon=True).start()
-gr.Interface(fn=lambda x:x, inputs="text", outputs="text").launch(server_name="0.0.0.0", server_port=10000)
+
+# Interfaccia Gradio per mantenere attivo il servizio su Render
+def home(input_text):
+    return "Il bot è attivo e in ascolto su Telegram."
+
+app = gr.Interface(
+    fn=home, 
+    inputs="text", 
+    outputs="text", 
+    title="Moltbot Status Center",
+    description="Se vedi questa pagina, il server è online."
+)
+
+if __name__ == "__main__":
+    app.launch(server_name="0.0.0.0", server_port=10000)
