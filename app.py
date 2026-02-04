@@ -4,36 +4,36 @@ import google.generativeai as genai
 import threading
 import gradio as gr
 
-# Recupero chiavi
-G_KEY = os.environ.get("GOOGLE_API_KEY")
 T_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+G_KEY = os.environ.get("GOOGLE_API_KEY")
 
 def avvia_bot():
-    print("--- 🚀 AVVIO VERSIONE STABILE ---")
     try:
         genai.configure(api_key=G_KEY)
+        # Usiamo il modello più stabile
         model = genai.GenerativeModel('gemini-1.5-flash')
         bot = telebot.TeleBot(T_TOKEN)
-        
-        # Questa riga è magica: uccide ogni connessione vecchia/conflitto
         bot.remove_webhook(drop_pending_updates=True)
         
         @bot.message_handler(func=lambda m: True)
         def rispondi(m):
             try:
-                print(f"--- 📩 Ricevuto: {m.text} ---")
+                # Chiediamo a Gemini di rispondere
                 res = model.generate_content(m.text)
                 bot.reply_to(m, res.text)
-            except Exception as e_inner:
-                print(f"--- ❌ Errore: {e_inner} ---")
-                bot.reply_to(m, "Sto riordinando le idee, riprova tra un attimo!")
+            except Exception as e_gemini:
+                # Se Gemini fallisce, ci dice perché direttamente su Telegram!
+                bot.reply_to(m, f"Errore del cervello: {e_gemini}")
             
-        print("--- ✅ BOT PRONTO E IN ASCOLTO ---")
-        # skip_pending_updates evita che il bot risponda a vecchi messaggi tutti insieme
         bot.infinity_polling(skip_pending_updates=True)
     except Exception as e:
-        print(f"--- ❌ ERRORE CRITICO: {e} ---")
+        print(f"Errore avvio: {e}")
 
+threading.Thread(target=avvia_bot, daemon=True).start()
+
+with gr.Blocks() as demo:
+    gr.Markdown("# Bot di Valeria Online")
+demo.launch(server_name="0.0.0.0", server_port=10000)
 # Avvio
 threading.Thread(target=avvia_bot, daemon=True).start()
 
