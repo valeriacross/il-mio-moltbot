@@ -5,42 +5,49 @@ import threading
 import time
 import gradio as gr
 
+# Recupero credenziali
 T_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 G_KEY = os.environ.get("GOOGLE_API_KEY")
 
+# --- MASTER PROMPT INTEGRALE ---
+MASTER_PROMPT = """
+Generate a high-resolution image using the uploaded image as a canvas and face reference, maintaining its original aspect ratio and exact proportions.
+
+SUBJECT: Valeria Cross, transmaschile. Volto italiano 60 anni (capelli grigio platino ondulati, occhiali ottagonali Vogue Havana), corpo femminile morbido (180cm, 85kg, coppa D).
+
+NEGATIVE PROMPT: No volto femminile, no lineamenti giovani, no pelle artificiale, no distorsioni. No capelli lunghi, no ponytail, no stili militari, no capelli neri o castani.
+
+TECH SPECS: 85mm objective, f/2.8 aperture, ISO 200, shutter 1/160. Global Illumination, Ambient Occlusion, Subsurface Scattering on skin, Frequency Separation post-processing. 8K ultra-realistic resolution (4.2MP).
+
+WATERMARK: MUST include refined signature "feat. Valeria Cross 👠" bottom left, cursive champagne script, 90% opacity.
+"""
+
 def avvia_bot():
     try:
-        # Configurazione con la nuova chiave
         genai.configure(api_key=G_KEY)
-        
-        # Proviamo il nome 'ufficiale' completo per evitare il 404
-        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+        # Usiamo il Pro dell'account Wallycap
+        model = genai.GenerativeModel(
+            model_name='gemini-1.5-pro',
+            system_instruction=MASTER_PROMPT
+        )
         
         bot = telebot.TeleBot(T_TOKEN)
-        
-        # RESET AGGRESSIVO DEL WEBHOOK
         bot.remove_webhook()
-        time.sleep(2) # Pausa per lasciare respirare Telegram
+        time.sleep(1)
         
         @bot.message_handler(func=lambda m: True)
         def handle_message(m):
             try:
-                # Test di risposta minimo
-                response = model.generate_content(f"Rispondi in 5 parole: {m.text}")
+                # Generazione prompt/contenuto con Gemini Pro
+                response = model.generate_content(m.text)
                 bot.reply_to(m, response.text)
             except Exception as e:
-                bot.reply_to(m, f"❌ Errore Interno: {e}")
+                bot.reply_to(m, f"⚠️ Errore: {e}")
 
-        print("--- ✅ MOLTBOT OPERATIVO ---", flush=True)
-        # skip_pending pulisce i messaggi accumulati durante il crash
-        bot.infinity_polling(skip_pending=True, timeout=60)
-        
+        print("--- ✅ MOLTBOT PRO VOGUE ONLINE ---", flush=True)
+        bot.infinity_polling(skip_pending=True)
     except Exception as e:
-        print(f"--- ❌ ERRORE AVVIO: {e} ---", flush=True)
-
-# Gradio serve a tenere in vita il server su Render
-def dummy_interface(input_text):
-    return f"Bot Status: Online. Last input: {input_text}"
+        print(f"--- ❌ ERRORE CRITICO: {e} ---", flush=True)
 
 threading.Thread(target=avvia_bot, daemon=True).start()
-gr.Interface(fn=dummy_interface, inputs="text", outputs="text").launch(server_name="0.0.0.0", server_port=10000)
+gr.Interface(fn=lambda x:x, inputs="text", outputs="text").launch(server_name="0.0.0.0", server_port=10000)
