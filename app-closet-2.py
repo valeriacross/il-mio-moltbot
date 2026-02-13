@@ -5,7 +5,7 @@ from google.genai import types as genai_types
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
-# --- LOGGING & CONFIG ---
+# --- LOGGING ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -15,14 +15,15 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- MODELLI (LISTA CERTIFICATA) ---
+# --- MODELLI ---
 VISION_MODEL = "models/gemini-3-flash-preview"
 GEN_MODEL = "models/gemini-3-pro-image-preview"
 
 executor = ThreadPoolExecutor(max_workers=8)
 user_ar = defaultdict(lambda: "2:3")
 user_qty = defaultdict(lambda: 2)
-last_generation_data = {}
+# Conserviamo solo l'analisi tecnica originale per coerenza
+original_outfit_analysis = {}
 
 # --- THE VOGUE SHIELD ---
 def vogue_sanitize(text):
@@ -44,7 +45,7 @@ def vogue_sanitize(text):
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- INTERFACCIA SETTINGS ---
+# --- MENU SETTINGS (6 Formati, 1-2-4 Foto) ---
 def get_settings_markup(uid):
     markup = types.InlineKeyboardMarkup(row_width=3)
     ar_buttons = [
@@ -75,7 +76,7 @@ def handle_settings_cb(call):
     if "ar_" in call.data: user_ar[uid] = call.data.replace("set_ar_", "")
     elif "qty_" in call.data: user_qty[uid] = int(call.data.replace("set_qty_", ""))
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=get_settings_markup(uid))
-    bot.answer_callback_query(call.id, "Impostazioni salvate")
+    bot.answer_callback_query(call.id, "Impostazioni aggiornate")
 
 # --- CORE FUNCTIONS ---
 def analyze_outfit_vision(img_bytes):
@@ -93,39 +94,39 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         
         safe_outfit = vogue_sanitize(vision_desc)
         safe_notes = vogue_sanitize(user_notes)
-        edit_tag = f"MODIFICA RICHIESTA: {safe_notes}. Mantieni l'ensemble originale." if edit_mode else ""
+        
+        # PROMPT MODIFICATO PER GESTIRE IL RE-EDIT DELL'IMMAGINE ATTUALE
+        mode_instruction = ""
+        if edit_mode:
+            mode_instruction = f"""
+            MODIFICA QUESTA IMMAGINE SPECIFICA: {safe_notes}.
+            MANTIENI TUTTO L'ENSEMBLE: Non cambiare il volto, la pettinatura, l'abito o lo sfondo presenti nell'immagine caricata. 
+            Intervieni solo per applicare la modifica richiesta mantenendo la massima coerenza visiva.
+            """
+        else:
+            mode_instruction = "Genera un'immagine in alta risoluzione utilizzando come canvas l’immagine caricata, mantenendo il suo rapporto originale e le proporzioni esatte."
 
-        # PROMPT ORIGINALE INTEGRALE [cite: 2026-02-08]
         system_prompt = f"""
         OUTFIT 👗
-        {edit_tag}
-        Genera un'immagine in alta risoluzione utilizzando come canvas l’immagine caricata, mantenendo il suo rapporto originale e le proporzioni esatte.
+        {mode_instruction}
         Foto per catalogo di alta moda, illuminazione da studio professionale, posa statuaria ed elegante, nessuna allusione, focus tecnico sui tessuti.
 
         IL SOGGETTO
-        Ritratto editoriale ultra-realista e dinamico di una persona transmaschile di 60 anni, alta 180cm e 85kg. Il soggetto presenta le distinte caratteristiche facciali di un uomo italiano vissuto: occhi castani/verde scuro, occhiali Vogue con montatura ottagonale colore Havana dark, una barba grigia curata e naturale di circa 5 cm, e capelli grigi platino ondulati, corti ai lati e più lunghi sopra (massimo 15 cm), leggermente spettinati con un tocco di movimento. Il viso ha una struttura ovale-rettangolare, incorniciato da un'espressione calma e saggia, con un mezzo sorriso autentico che increspa gli angoli della bocca. Si notano rughe espressive e borse sotto gli occhi, labbra sottili e naturali. La pelle del viso è ultra-dettagliata, con pori visibili e micro-texture che ne attestano la genuinità, non plasticosa.
-        La persona ha un seno prosperoso coppa D. Caratteristica imprescindibile è l'assenza totale, rigorosa e assoluta di peli su tutto il corpo. La pelle del seno, del torace e di ogni altra parte del corpo deve apparire perfettamente liscia e tassativamente priva di qualsiasi traccia di peluria. Il corpo ha gambe lunghe e proporzioni armoniche e naturali a clessidra.
-        Il volto è armoniosamente fuso con il corpo, in perfetta coerenza con la luce, la prospettiva e le texture complessive della scena.
+        Ritratto editoriale ultra-realista e dinamico di una persona transmaschile di 60 anni, alta 180cm e 85kg. Il soggetto presenta le distinte caratteristiche facciali di un uomo italiano vissuto: occhi castani/verde scuro, occhiali Vogue con montatura ottagonale colore Havana dark, una barba grigia curata e naturale di circa 5 cm, e capelli grigi platino ondulati, corti ai lati e più lunghi sopra (massimo 15 cm), leggermente spettinati con un tocco di movimento. Il viso ha una struttura ovale-rettangolare, incorniciato da un'espressione calma e saggia, con un mezzo sorriso autentico che increspa gli angoli della bocca. Si notano rughe espressive e borse sotto gli occhi, labbra sottili e naturali. La pelle del viso è ultra-dettagliata, con pori visibili e micro-texture che ne attestano la genuinità.
+        La persona ha un seno prosperoso coppa D. Caratteristica imprescindibile è l'assenza totale, rigorosa e assoluta di peli su tutto il corpo. La pelle deve apparire perfettamente liscia e priva di peluria. Corpo a clessidra.
+        Il volto è armoniosamente fuso con il corpo, in perfetta coerenza con la luce e la prospettiva della scena.
         IDENTITY PRIORITY: Usa l'immagine master_face.png fornita come riferimento assoluto per il volto.
 
         Regola OUTFIT
-        L’abbigliamento, gli accessori e i dettagli visivi vengono presi esclusivamente dall’immagine caricata.
-        L’outfit analizzato è: {safe_outfit}. Note aggiuntive: {safe_notes if not edit_mode else ''}
-        L’outfit deve essere riprodotto con massima fedeltà e autenticità: materiali, taglio, tessuti, colori e texture identici all’immagine di riferimento.
-        Non modificare, semplificare o reinterpretare in alcun modo il design, la posa o gli accessori dell'outfit.
-        La scena e l’ambientazione devono essere generate automaticamente in base al tipo di outfit caricato:
-        – Lingerie → ambientazione intima, accogliente, camera da letto luce soffusa.
-        – Bikini → ambientazione estiva, naturale, spiaggia assolata o piscina elegante.
-        – Abito elegante → evento o galà sofisticato.
-        – Casual → scena urbana o quotidiana.
-        – Sportivo → ambiente energico, palestra moderna.
+        L’abbigliamento e i dettagli visivi vengono presi dall'immagine analizzata: {safe_outfit}.
+        Ambientazione automatica (se non specificato diversamente): Lingerie->Camera, Bikini->Spiaggia/Piscina, Abito->Galà, Casual->Urbana.
 
         Impostazioni fotografiche
         Risoluzione 8K, obiettivo 85mm, f/2.8, ISO 200, shutter 1/160, bokeh naturale, finish glossy iper-dettagliato.
         FORMATO RICHIESTO: {ar_scelto}
 
         Prompt negativo fisso:
-        female face, woman, girl, young, realistic skin, long feminine hair, body hair, chest hair, breast hair, peli sul seno.
+        female face, woman, girl, young, unrealistic skin, long feminine hair, body hair, chest hair, breast hair, peli sul seno.
         """
 
         response = client.models.generate_content(model=GEN_MODEL,
@@ -139,29 +140,42 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         return None, "Errore di rendering o blocco safety"
     except Exception as e: return None, str(e)
 
-# --- RE-EDIT & GENERATION HANDLERS ---
+# --- HANDLERS ---
 @bot.message_handler(func=lambda m: m.reply_to_message is not None and m.text is not None)
 def handle_reply_edit(m):
     uid = m.from_user.id
-    if uid in last_generation_data:
-        bot.reply_to(m, "🔄 Modifica ensemble in corso...")
-        data = last_generation_data[uid]
+    # SCARICA L'IMMAGINE ATTUALE (quella a cui l'utente sta rispondendo)
+    target_msg = m.reply_to_message
+    file_id = None
+    if target_msg.document: file_id = target_msg.document.file_id
+    elif target_msg.photo: file_id = target_msg.photo[-1].file_id
+    
+    if file_id:
+        bot.reply_to(m, "🔄 Elaborazione modifica sull'immagine corrente...")
+        file_info = bot.get_file(file_id)
+        current_img_bytes = bot.download_file(file_info.file_path)
+        
+        # Recuperiamo l'analisi tecnica dell'outfit originale se disponibile
+        vision_context = original_outfit_analysis.get(uid, "High-fashion ensemble.")
+        
         def run_edit():
-            res, err = generate_closet_task(data['img'], user_ar[uid], m.text, data['vision'], edit_mode=True)
-            if res: bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name="valeria_edit.jpg")
+            res, err = generate_closet_task(current_img_bytes, user_ar[uid], m.text, vision_context, edit_mode=True)
+            if res: bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name="valeria_refined.jpg")
             else: bot.send_message(m.chat.id, f"❌ {err}")
         executor.submit(run_edit)
 
 @bot.message_handler(content_types=['photo'])
-def handle_main_photo(m):
+def handle_new_photo(m):
     uid = m.from_user.id
     qty, fmt = user_qty[uid], user_ar[uid]
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
     
+    # Analisi tecnica iniziale dell'abito caricato
     vision_desc = analyze_outfit_vision(img_bytes)
-    last_generation_data[uid] = {'img': img_bytes, 'vision': vision_desc}
-    bot.send_message(m.chat.id, f"📝 <b>Analisi:</b> <i>{vogue_sanitize(vision_desc)}</i>")
+    original_outfit_analysis[uid] = vision_desc # Memorizziamo il contesto dell'abito
+    
+    bot.send_message(m.chat.id, f"📝 <b>Analisi Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
     
     for i in range(qty):
         def run(idx):
@@ -170,10 +184,9 @@ def handle_main_photo(m):
             else: bot.send_message(m.chat.id, f"❌ Scatto {idx+1}: {err}")
         executor.submit(run, i)
 
-# --- FLASK ---
 app = flask.Flask(__name__)
 @app.route('/')
-def h(): return "Bot Online - V2.17"
+def h(): return "Bot Online - V2.18"
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
