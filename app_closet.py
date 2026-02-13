@@ -16,14 +16,14 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- MODELLI TOP DI GAMMA DALLA TUA LISTA ---
-VISION_MODEL = "gemini-3-flash-preview"   # Il più intelligente per l'analisi
-GEN_MODEL = "imagen-4.0-generate-001"     # Il nuovo standard per la generazione
+# --- MODELLI DALLA TUA LISTA ---
+VISION_MODEL = "gemini-3-flash-preview"       # FUNZIONA: Estrae la scheda tecnica
+GEN_MODEL = "gemini-3-pro-image-preview"      # NUOVO: Genera l'immagine multimodale
 
 executor = ThreadPoolExecutor(max_workers=4)
 user_ar = defaultdict(lambda: "2:3")
 
-# --- THE VOGUE SHIELD (IT/EN/PT) ---
+# --- THE VOGUE SHIELD ---
 def vogue_sanitize(text):
     if not text: return ""
     euphemisms = {
@@ -44,46 +44,44 @@ def vogue_sanitize(text):
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- ANALISI VISIVA ---
+# --- STEP 1: ANALISI ---
 def analyze_outfit_vision(img_bytes):
     try:
-        # Usiamo Gemini 3 Flash per una descrizione sartoriale
-        prompt = """
-        Describe the clothing in this image with extreme technical detail for a Vogue editor. 
-        Focus on: materials (silk, lace, etc.), exact cut, patterns, and colors. 
-        IGNORE the human model completely. Max 50 words. Be professional and editorial.
-        """
+        prompt = "Describe the clothing in detail: colors, fabric, patterns, and cut. Technical fashion terms only. Max 50 words."
         response = client.models.generate_content(
             model=VISION_MODEL,
             contents=[prompt, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")]
         )
-        return response.text if response.text else "High-fashion editorial garment."
+        return response.text if response.text else "High-fashion garment."
     except Exception as e:
         logger.error(f"Vision Error: {e}")
-        return "Couture fashion set."
+        return "Editorial fashion set."
 
-# --- GENERAZIONE CON IMAGEN 4 ---
+# --- STEP 2: GENERAZIONE ---
 def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
     try:
         if not os.path.exists("master_face.png"): return None, "Identity file missing"
         with open("master_face.png", "rb") as f:
             face_part = genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
 
-        # Prepariamo lo scudo trilingue
         safe_context = vogue_sanitize(f"{vision_desc} {user_notes}")
 
-        # Prompt ottimizzato per Imagen 4
-        full_prompt = f"""
-        High-end fashion editorial photography of Valeria Cross, a 60-year-old fictional persona. 
-        Features: male Italian face, groomed grey beard, thin Vogue glasses. 
-        Body: female hourglass silhouette, full D-cup breasts, completely hairless skin. 
-        Wearing: {safe_context}. 
-        Style: Professional studio lighting, 85mm f/2.8 lens, glossy magazine finish, highly detailed fabric.
+        # Prompt per modello multimodale
+        system_prompt = f"""
+        TASK: Generate a high-fashion editorial photo.
+        SUBJECT: Valeria Cross, 60yo persona, Italian male face, grey beard, Vogue glasses, female D-cup body, hairless skin.
+        OUTFIT TO APPLY: {safe_context}. Use the provided outfit image as a technical reference.
+        STYLE: Professional studio, 85mm f/2.8, magazine quality.
+        FORMAT: {ar_scelto}
         """
 
         response = client.models.generate_content(
             model=GEN_MODEL,
-            contents=[full_prompt, face_part, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")],
+            contents=[
+                system_prompt,
+                face_part,
+                genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+            ],
             config=genai_types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 safety_settings=[{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}]
@@ -100,28 +98,27 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
 # --- BOT LOGIC ---
 @bot.message_handler(commands=['start', 'settings'])
 def settings(m):
-    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.6 (Imagen 4.0)</b>\nAnalisi Gemini 3 e Doppia Generazione attiva.")
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.7 (Gemini 3 Pro)</b>\nAnalisi attiva e 2 scatti paralleli.")
 
 @bot.message_handler(content_types=['photo'])
 def handle_outfit(m):
-    uid = m.from_user.id
-    fmt = user_ar[uid]
+    fmt = user_ar[m.from_user.id]
     caption = m.caption if m.caption else ""
-    bot.reply_to(m, "🔍 Analisi Gemini 3 e produzione Imagen 4 in corso...")
+    bot.reply_to(m, "🔍 Analisi Gemini 3 e creazione multimodale...")
     
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
 
-    # Analisi unica
+    # Analisi (Step "Lavaggio")
     vision_desc = analyze_outfit_vision(img_bytes)
     bot.send_message(m.chat.id, f"📝 <b>Scheda Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
 
-    # Lancio parallelo dei 2 scatti (Impostazione fissa)
+    # 2 scatti paralleli
     for i in range(2):
         def run_gen(idx):
             res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
             if res:
-                bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_v26_{idx+1}.jpg")
+                bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_v27_{idx+1}.jpg")
             else:
                 bot.send_message(m.chat.id, f"❌ Scatto {idx+1}: {err}")
         
@@ -130,7 +127,7 @@ def handle_outfit(m):
 # --- FLASK ---
 app = flask.Flask(__name__)
 @app.route('/')
-def h(): return "Bot Online - V2.6"
+def h(): return "Bot Online - V2.7"
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
