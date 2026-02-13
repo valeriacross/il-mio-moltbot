@@ -16,14 +16,15 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- MODELLI (LISTA DEFINITIVA) ---
+# --- MODELLI ---
 VISION_MODEL = "models/gemini-3-flash-preview"
 GEN_MODEL = "models/gemini-3-pro-image-preview"
 
-executor = ThreadPoolExecutor(max_workers=4)
+executor = ThreadPoolExecutor(max_workers=8) # Aumentato per gestire fino a 4 scatti paralleli
 user_ar = defaultdict(lambda: "2:3")
+user_qty = defaultdict(lambda: 2)
 
-# --- THE VOGUE SHIELD (Sanitizzazione Trilingue) ---
+# --- THE VOGUE SHIELD ---
 def vogue_sanitize(text):
     if not text: return ""
     euphemisms = {
@@ -43,7 +44,7 @@ def vogue_sanitize(text):
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- ANALISI VISIVA (NECESSARIA PER IL BYPASS SAFETY) ---
+# --- ANALISI VISIVA ---
 def analyze_outfit_vision(img_bytes):
     try:
         prompt = "Describe the clothing in detail: materials, cut, colors, and textures. Technical fashion terms only. Max 50 words. Ignore the model's body."
@@ -56,7 +57,7 @@ def analyze_outfit_vision(img_bytes):
         logger.error(f"Vision Error: {e}")
         return "Editorial fashion outfit."
 
-# --- GENERAZIONE (IL TUO PROMPT ORIGINALE) ---
+# --- GENERAZIONE ---
 def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
     try:
         if not os.path.exists("master_face.png"): 
@@ -65,11 +66,10 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
         with open("master_face.png", "rb") as f:
             face_part = genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
 
-        # Sanitizzazione per sicurezza
         safe_outfit_desc = vogue_sanitize(vision_desc)
         safe_user_notes = vogue_sanitize(user_notes)
 
-        # IL TUO PROMPT ORIGINALE INTEGRATO INTEGRALMENTE
+        # IL TUO PROMPT ORIGINALE INTEGRALE
         system_prompt = f"""
         OUTFIT 👗
         Genera un'immagine in alta risoluzione utilizzando come canvas l’immagine caricata, mantenendo il suo rapporto originale e le proporzioni esatte.
@@ -82,8 +82,8 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
         IDENTITY PRIORITY: Usa l'immagine master_face.png fornita come riferimento assoluto per il volto.
 
         Regola OUTFIT
-        L’abbigliamento, gli accessori e i dettagli visivi vengono presi esclusivamente dall’immagine caricata.
-        L'outfit analizzato è: {safe_outfit_desc}. {safe_user_notes}
+        L’abbigliamento, gli accessori e i dettagli visivi vengono presi esclusivamente dall’immagine caricata (in formato JPG o PNG).
+        L’outfit analizzato è: {safe_outfit_desc}. Note aggiuntive: {safe_user_notes}
         L’outfit deve essere riprodotto con massima fedeltà e autenticità: materiali, taglio, tessuti, colori e texture identici all’immagine di riferimento.
         Non modificare, semplificare o reinterpretare in alcun modo il design, la posa o gli accessori dell'outfit.
         La scena e l’ambientazione devono essere generate automaticamente in base al tipo di outfit caricato, creando un contesto realistico e immersivo:
@@ -103,11 +103,7 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
 
         response = client.models.generate_content(
             model=GEN_MODEL,
-            contents=[
-                system_prompt,
-                face_part,
-                genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-            ],
+            contents=[system_prompt, face_part, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")],
             config=genai_types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 safety_settings=[{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}]
@@ -121,33 +117,67 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
         return None, f"Blocco Safety: {getattr(response.candidates[0], 'finish_reason', 'Sconosciuto')}"
     except Exception as e: return None, str(e)
 
-# --- BOT LOGIC ---
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.send_message(m.chat.id, "<b>👗 Valeria Closet V2.14 (Full Prompt Restore)</b>\nInvia l'outfit.")
+# --- MENU DI SETTING ---
+def get_settings_markup(uid):
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    # Formati (6 tipi)
+    ar_buttons = [
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='2:3' else ''}2:3", callback_data="set_ar_2:3"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='3:2' else ''}3:2", callback_data="set_ar_3:2"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='9:16' else ''}9:16", callback_data="set_ar_9:16"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='16:9' else ''}16:9", callback_data="set_ar_16:9"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='1:1' else ''}1:1", callback_data="set_ar_1:1"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_ar[uid]=='4:5' else ''}4:5", callback_data="set_ar_4:5")
+    ]
+    # Quantità (1, 2, 4)
+    qty_buttons = [
+        types.InlineKeyboardButton(f"{'✅ ' if user_qty[uid]==1 else ''}1 Foto", callback_data="set_qty_1"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_qty[uid]==2 else ''}2 Foto", callback_data="set_qty_2"),
+        types.InlineKeyboardButton(f"{'✅ ' if user_qty[uid]==4 else ''}4 Foto", callback_data="set_qty_4")
+    ]
+    markup.add(*ar_buttons)
+    markup.add(*qty_buttons)
+    return markup
 
+@bot.message_handler(commands=['start', 'settings'])
+def show_settings(m):
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Settings</b>\nScegli il formato e il numero di scatti:", 
+                     reply_markup=get_settings_markup(m.from_user.id))
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("set_"))
+def handle_settings_cb(call):
+    uid = call.from_user.id
+    if "ar_" in call.data:
+        user_ar[uid] = call.data.replace("set_ar_", "")
+    elif "qty_" in call.data:
+        user_qty[uid] = int(call.data.replace("set_qty_", ""))
+    
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=get_settings_markup(uid))
+    bot.answer_callback_query(call.id, "Impostazioni aggiornate")
+
+# --- CORE LOGIC ---
 @bot.message_handler(content_types=['photo'])
-def handle_outfit(m):
-    fmt = user_ar[m.from_user.id]
+def handle_photo(m):
+    uid = m.from_user.id
+    qty, fmt = user_qty[uid], user_ar[uid]
     caption = m.caption if m.caption else ""
-    bot.reply_to(m, "🔍 Analisi Vogue e doppia generazione originale in corso...")
+    
+    bot.reply_to(m, f"🔍 Analisi Vogue e produzione di {qty} scatti (Formato {fmt}) in corso...")
     
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
 
-    # Analisi tecnica per aiutare il modello a non "spaventarsi"
     vision_desc = analyze_outfit_vision(img_bytes)
     bot.send_message(m.chat.id, f"📝 <b>Analisi:</b> <i>{vogue_sanitize(vision_desc)}</i>")
 
-    # Doppia generazione fissa con il prompt originale
-    for i in range(2):
-        def run_gen(idx):
+    for i in range(qty):
+        def run_task(idx):
             res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
             if res:
                 bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_{idx+1}.jpg")
             else:
                 bot.send_message(m.chat.id, f"❌ Scatto {idx+1}: {err}")
-        executor.submit(run_gen, i)
+        executor.submit(run_task, i)
 
 # --- FLASK ---
 app = flask.Flask(__name__)
