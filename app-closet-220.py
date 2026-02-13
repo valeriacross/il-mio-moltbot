@@ -1,3 +1,13 @@
+# ---------------------------------------------------------
+# VERSION: V2.20 (Golden Copy - Restored)
+# TIMESTAMP: 2026-02-13 23:35 WET
+# STATUS: Waiting for API Quota Reset (Error 429)
+# LOGIC: 
+# - Model: gemini-3-pro-image-preview (High Fidelity Img2Img)
+# - Prompt: Pose Unlocked ("Use as visual reference", "Pose MUST be new")
+# - Features: Menus (6 AR, 1-2-4 Qty), Edit via Reply.
+# ---------------------------------------------------------
+
 import os, io, threading, logging, flask, telebot, re
 from telebot import types
 from google import genai
@@ -15,7 +25,7 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- MODELLI ---
+# --- MODELLI (La combinazione vincente della V2.20) ---
 VISION_MODEL = "models/gemini-3-flash-preview"
 GEN_MODEL = "models/gemini-3-pro-image-preview"
 
@@ -66,7 +76,7 @@ def get_settings_markup(uid):
 
 @bot.message_handler(commands=['start', 'settings'])
 def show_settings(m):
-    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Settings</b>\nScegli il formato e il numero di scatti:", 
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Settings (V2.20 Restored)</b>\nScegli il formato e il numero di scatti:", 
                      reply_markup=get_settings_markup(m.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("set_"))
@@ -88,6 +98,8 @@ def analyze_outfit_vision(img_bytes):
 
 def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mode=False):
     try:
+        if not os.path.exists("master_face.png"): return None, "ERRORE: master_face.png mancante!"
+        
         with open("master_face.png", "rb") as f:
             face_part = genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
         
@@ -102,7 +114,7 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
             Intervieni solo per applicare la modifica richiesta mantenendo la massima coerenza visiva.
             """
         else:
-            # MODIFICA 1: "canvas" cambiato in "riferimento visivo per l'abito"
+            # LOGICA V2.20: Posa Sbloccata ("Reference Visivo" invece di "Canvas")
             mode_instruction = "Genera un'immagine in alta risoluzione utilizzando l’immagine caricata come riferimento visivo per l'abito e i suoi dettagli."
 
         system_prompt = f"""
@@ -119,7 +131,6 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         Regola OUTFIT
         L’abbigliamento e i dettagli visivi vengono presi dall'immagine analizzata: {safe_outfit}.
         L’outfit deve essere riprodotto con massima fedeltà: materiali, taglio, tessuti, colori e texture identici all’immagine di riferimento.
-        # MODIFICA 2: Sblocco della posa.
         Non modificare il design o i materiali dell'outfit. La posa DEVE essere nuova, dinamica ed editoriale, NON statica come nell'immagine di riferimento.
         Ambientazione automatica (se non specificato diversamente): Lingerie->Camera, Bikini->Spiaggia/Piscina, Abito->Galà, Casual->Urbana.
 
@@ -139,7 +150,7 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.inline_data: return part.inline_data.data, None
-        return None, "Errore di rendering o blocco safety"
+        return None, "Errore Rendering o Blocco Safety"
     except Exception as e: return None, str(e)
 
 # --- HANDLERS ---
@@ -185,9 +196,9 @@ def handle_new_photo(m):
 
 app = flask.Flask(__name__)
 @app.route('/')
-def h(): return "Bot Online - V2.20 (Pose Unlocked)"
+def h(): return "Bot Online - V2.20 Restored"
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
     bot.infinity_polling()
-        
+    
