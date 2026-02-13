@@ -13,17 +13,20 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("CLOSET_TOKEN")
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 
+if not TOKEN or not API_KEY:
+    raise ValueError("🚨 CLOSET_TOKEN o GOOGLE_API_KEY mancanti!")
+
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-VISION_MODEL = "gemini-1.5-pro" 
-GEN_MODEL = "nano-banana-pro-preview"
+# Nomi Modelli Ufficiali (Aggiornati per evitare 404)
+VISION_MODEL = "gemini-1.5-flash" 
+GEN_MODEL = "gemini-2.0-flash"
 
-executor = ThreadPoolExecutor(max_workers=4) # Aumentato per gestire 2 scatti paralleli
+executor = ThreadPoolExecutor(max_workers=4)
 user_ar = defaultdict(lambda: "2:3")
-user_qty = defaultdict(lambda: 2) # Ripristinato Default a 2
 
-# --- THE VOGUE SHIELD ---
+# --- THE VOGUE SHIELD (IT/EN/PT) ---
 def vogue_sanitize(text):
     if not text: return ""
     euphemisms = {
@@ -47,13 +50,15 @@ def vogue_sanitize(text):
 # --- ANALIZZATORE VISIVO ---
 def analyze_outfit_vision(img_bytes):
     try:
-        prompt = "Describe ONLY the clothing: materials, cut, and colors. Ignore the person. Use high-fashion technical terms. Max 40 words."
+        prompt = "Describe ONLY the clothing: materials, cut, and colors. Use high-fashion technical terms. Max 40 words."
         response = client.models.generate_content(
             model=VISION_MODEL,
             contents=[prompt, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")]
         )
         return response.text if response.text else "Editorial garment."
-    except: return "High-fashion outfit."
+    except Exception as e:
+        logger.error(f"Vision Error: {e}")
+        return "High-fashion outfit."
 
 # --- GENERAZIONE ---
 def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
@@ -91,8 +96,7 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
             for part in response.candidates[0].content.parts:
                 if part.inline_data: return part.inline_data.data, None
         
-        reason = getattr(response.candidates[0], 'finish_reason', 'Sconosciuto')
-        return None, f"Blocco: {reason}"
+        return None, f"Blocco: {getattr(response.candidates[0], 'finish_reason', 'Sconosciuto')}"
     except Exception as e: return None, str(e)
 
 # --- BOT LOGIC ---
@@ -100,39 +104,36 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
 def settings(m):
     markup = types.InlineKeyboardMarkup()
     markup.row(types.InlineKeyboardButton("2:3 🖼️", callback_data="ar_2:3"), types.InlineKeyboardButton("3:2 📷", callback_data="ar_3:2"))
-    markup.row(types.InlineKeyboardButton("1 Foto", callback_data="qty_1"), types.InlineKeyboardButton("2 Foto", callback_data="qty_2"))
-    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.3</b>\nScegli formato e quantità.", reply_markup=markup)
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.4</b>\nAnalisi automatica e 2 scatti attivi.", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def cb(call):
-    uid = call.from_user.id
-    if "ar_" in call.data: user_ar[uid] = call.data.replace("ar_", "")
-    if "qty_" in call.data: user_qty[uid] = int(call.data.replace("qty_", ""))
+    if "ar_" in call.data: user_ar[call.from_user.id] = call.data.replace("ar_", "")
     bot.answer_callback_query(call.id, "Impostazioni salvate")
 
 @bot.message_handler(content_types=['photo'])
 def handle_outfit(m):
-    uid = m.from_user.id
-    qty, fmt = user_qty[uid], user_ar[uid]
+    fmt = user_ar[m.from_user.id]
     caption = m.caption if m.caption else ""
-    bot.reply_to(m, "🔍 Analisi stilistica e preparazione scatti...")
+    bot.reply_to(m, "🔍 Analisi e doppia generazione in corso...")
     
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
 
-    # Analisi fatta una volta sola per risparmiare tempo
+    # Analisi unica
     vision_desc = analyze_outfit_vision(img_bytes)
-    bot.send_message(m.chat.id, f"📝 <b>Scheda Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
+    bot.send_message(m.chat.id, f"📝 <b>Analisi Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
 
-    def run_gen(i):
-        res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
-        if res:
-            bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"closet_{i+1}.jpg")
-        else:
-            bot.send_message(m.chat.id, f"❌ Scatto {i+1}: {err}")
-
-    for i in range(qty):
-        executor.submit(run_gen, i)
+    # Lancio dei 2 scatti
+    for i in range(2):
+        def run_gen(idx=i):
+            res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
+            if res:
+                bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_scatto_{idx+1}.jpg")
+            else:
+                bot.send_message(m.chat.id, f"❌ Scatto {idx+1}: {err}")
+        
+        executor.submit(run_gen)
 
 # --- FLASK ---
 app = flask.Flask(__name__)
