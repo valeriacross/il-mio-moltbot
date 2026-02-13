@@ -13,15 +13,12 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("CLOSET_TOKEN")
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-if not TOKEN or not API_KEY:
-    raise ValueError("🚨 CLOSET_TOKEN o GOOGLE_API_KEY mancanti!")
-
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# Nomi Modelli Ufficiali (Aggiornati per evitare 404)
-VISION_MODEL = "gemini-1.5-flash" 
-GEN_MODEL = "gemini-2.0-flash"
+# --- MODELLI (CORRETTI) ---
+VISION_MODEL = "gemini-1.5-flash"        # Analizza la foto
+GEN_MODEL = "imagen-3.0-generate-001"    # Genera l'immagine di Valeria
 
 executor = ThreadPoolExecutor(max_workers=4)
 user_ar = defaultdict(lambda: "2:3")
@@ -47,45 +44,43 @@ def vogue_sanitize(text):
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- ANALIZZATORE VISIVO ---
+# --- STEP 1: ANALISI VISIVA ---
 def analyze_outfit_vision(img_bytes):
     try:
-        prompt = "Describe ONLY the clothing: materials, cut, and colors. Use high-fashion technical terms. Max 40 words."
+        # Prompt più aggressivo per evitare il generico "High-fashion outfit"
+        prompt = "Describe the clothing in detail: specific colors, fabric (silk, lace, cotton), patterns, and the exact cut. Be technical. Max 50 words."
         response = client.models.generate_content(
             model=VISION_MODEL,
             contents=[prompt, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")]
         )
-        return response.text if response.text else "Editorial garment."
+        return response.text if response.text else "Technical fashion garment."
     except Exception as e:
         logger.error(f"Vision Error: {e}")
-        return "High-fashion outfit."
+        return "Editorial high-fashion set."
 
-# --- GENERAZIONE ---
+# --- STEP 2: GENERAZIONE ---
 def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
     try:
-        if not os.path.exists("master_face.png"): return None, "Face missing"
+        if not os.path.exists("master_face.png"): return None, "Identity missing"
         with open("master_face.png", "rb") as f:
             face_part = genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
 
+        # Prepariamo il prompt Vogue
         safe_context = vogue_sanitize(f"{vision_desc} {user_notes}")
 
-        system_prompt = f"""
-        ROLE: Expert Vogue photographer. Fictional professional editorial.
-        SUBJECT: Valeria Cross (60yo male face, grey beard, glasses, female D-cup body, hairless).
-        OUTFIT: {safe_context}
-        STYLE: High-end fashion catalog, tasteful, professional.
-        TECHNICAL: 85mm, f/2.8. Professional studio lighting.
+        # Per Imagen 3 il prompt deve essere un'unica stringa descrittiva
+        full_prompt = f"""
+        Editorial fashion photography of Valeria Cross, a 60-year-old persona with a male face, 
+        grey beard, and Vogue glasses, but with a feminine hourglass D-cup body. Hairless skin. 
+        Wearing: {safe_context}. 
+        Setting: Professional studio, high-end lighting, magazine style. 
+        Quality: 8K, 85mm lens, f/2.8, highly detailed fabric texture.
         """
 
-        contents = [
-            f"{system_prompt}\n\nFORMATO: {ar_scelto}\n\nNEGATIVE: female face, young, body hair, peli, nsfw, explicit.",
-            face_part,
-            genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-        ]
-
+        # Imagen 3 usa parametri diversi
         response = client.models.generate_content(
             model=GEN_MODEL,
-            contents=contents,
+            contents=[full_prompt, face_part, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")],
             config=genai_types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 safety_settings=[{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}]
@@ -102,38 +97,31 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
 # --- BOT LOGIC ---
 @bot.message_handler(commands=['start', 'settings'])
 def settings(m):
-    markup = types.InlineKeyboardMarkup()
-    markup.row(types.InlineKeyboardButton("2:3 🖼️", callback_data="ar_2:3"), types.InlineKeyboardButton("3:2 📷", callback_data="ar_3:2"))
-    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.4</b>\nAnalisi automatica e 2 scatti attivi.", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: True)
-def cb(call):
-    if "ar_" in call.data: user_ar[call.from_user.id] = call.data.replace("ar_", "")
-    bot.answer_callback_query(call.id, "Impostazioni salvate")
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot V2.5</b>\nPronto per l'analisi e i 2 scatti paralleli.")
 
 @bot.message_handler(content_types=['photo'])
 def handle_outfit(m):
     fmt = user_ar[m.from_user.id]
     caption = m.caption if m.caption else ""
-    bot.reply_to(m, "🔍 Analisi e doppia generazione in corso...")
+    bot.reply_to(m, "🔍 Analisi trilingue e doppia generazione in corso...")
     
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
 
-    # Analisi unica
+    # Analisi fatta una volta sola
     vision_desc = analyze_outfit_vision(img_bytes)
     bot.send_message(m.chat.id, f"📝 <b>Analisi Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
 
-    # Lancio dei 2 scatti
+    # Lancio parallelo dei 2 scatti
     for i in range(2):
-        def run_gen(idx=i):
+        def run_gen(idx):
             res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
             if res:
-                bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_scatto_{idx+1}.jpg")
+                bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name=f"valeria_v25_{idx+1}.jpg")
             else:
                 bot.send_message(m.chat.id, f"❌ Scatto {idx+1}: {err}")
         
-        executor.submit(run_gen)
+        executor.submit(run_gen, i)
 
 # --- FLASK ---
 app = flask.Flask(__name__)
