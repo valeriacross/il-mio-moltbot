@@ -22,7 +22,6 @@ GEN_MODEL = "models/gemini-3-pro-image-preview"
 executor = ThreadPoolExecutor(max_workers=8)
 user_ar = defaultdict(lambda: "2:3")
 user_qty = defaultdict(lambda: 2)
-# Conserviamo solo l'analisi tecnica originale per coerenza
 original_outfit_analysis = {}
 
 # --- THE VOGUE SHIELD ---
@@ -45,7 +44,7 @@ def vogue_sanitize(text):
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- MENU SETTINGS (6 Formati, 1-2-4 Foto) ---
+# --- MENU SETTINGS ---
 def get_settings_markup(uid):
     markup = types.InlineKeyboardMarkup(row_width=3)
     ar_buttons = [
@@ -95,7 +94,6 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         safe_outfit = vogue_sanitize(vision_desc)
         safe_notes = vogue_sanitize(user_notes)
         
-        # PROMPT MODIFICATO PER GESTIRE IL RE-EDIT DELL'IMMAGINE ATTUALE
         mode_instruction = ""
         if edit_mode:
             mode_instruction = f"""
@@ -104,7 +102,8 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
             Intervieni solo per applicare la modifica richiesta mantenendo la massima coerenza visiva.
             """
         else:
-            mode_instruction = "Genera un'immagine in alta risoluzione utilizzando come canvas l’immagine caricata, mantenendo il suo rapporto originale e le proporzioni esatte."
+            # MODIFICA 1: "canvas" cambiato in "riferimento visivo per l'abito"
+            mode_instruction = "Genera un'immagine in alta risoluzione utilizzando l’immagine caricata come riferimento visivo per l'abito e i suoi dettagli."
 
         system_prompt = f"""
         OUTFIT 👗
@@ -112,13 +111,16 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         Foto per catalogo di alta moda, illuminazione da studio professionale, posa statuaria ed elegante, nessuna allusione, focus tecnico sui tessuti.
 
         IL SOGGETTO
-        Ritratto editoriale ultra-realista e dinamico di una persona transmaschile di 60 anni, alta 180cm e 85kg. Il soggetto presenta le distinte caratteristiche facciali di un uomo italiano vissuto: occhi castani/verde scuro, occhiali Vogue con montatura ottagonale colore Havana dark, una barba grigia curata e naturale di circa 5 cm, e capelli grigi platino ondulati, corti ai lati e più lunghi sopra (massimo 15 cm), leggermente spettinati con un tocco di movimento. Il viso ha una struttura ovale-rettangolare, incorniciato da un'espressione calma e saggia, con un mezzo sorriso autentico che increspa gli angoli della bocca. Si notano rughe espressive e borse sotto gli occhi, labbra sottili e naturali. La pelle del viso è ultra-dettagliata, con pori visibili e micro-texture che ne attestano la genuinità.
+        Ritratto editoriale ultra-realista e dinamico di una persona transmaschile di 60 anni, alta 180cm e 85kg. Il soggetto presenta le distinte caratteristiche facciali di un uomo italiano vissuto: occhi castani/verde scuro, occhiali Vogue con montatura ottagonale colore Havana dark, una barba grigia curata e naturale di circa 5 cm, e capelli grigi platino ondulati, corti ai lati e più lunghi sopra (massimo 15 cm), leggermente spettinati con un tocco di movimento. Il viso ha una struttura ovale-rettangolare, incorniciato da un'espressione calma e saggia, con un mezzo sorriso autentico che increspa gli angoli della bocca. Si notano rughe espressive e borse sotto gli occhi, labbra sottili e naturali. La pelle del viso è ultra-dettagliata, con pori visibili e micro-texture.
         La persona ha un seno prosperoso coppa D. Caratteristica imprescindibile è l'assenza totale, rigorosa e assoluta di peli su tutto il corpo. La pelle deve apparire perfettamente liscia e priva di peluria. Corpo a clessidra.
         Il volto è armoniosamente fuso con il corpo, in perfetta coerenza con la luce e la prospettiva della scena.
         IDENTITY PRIORITY: Usa l'immagine master_face.png fornita come riferimento assoluto per il volto.
 
         Regola OUTFIT
         L’abbigliamento e i dettagli visivi vengono presi dall'immagine analizzata: {safe_outfit}.
+        L’outfit deve essere riprodotto con massima fedeltà: materiali, taglio, tessuti, colori e texture identici all’immagine di riferimento.
+        # MODIFICA 2: Sblocco della posa.
+        Non modificare il design o i materiali dell'outfit. La posa DEVE essere nuova, dinamica ed editoriale, NON statica come nell'immagine di riferimento.
         Ambientazione automatica (se non specificato diversamente): Lingerie->Camera, Bikini->Spiaggia/Piscina, Abito->Galà, Casual->Urbana.
 
         Impostazioni fotografiche
@@ -126,7 +128,7 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         FORMATO RICHIESTO: {ar_scelto}
 
         Prompt negativo fisso:
-        female face, woman, girl, young, unrealistic skin, long feminine hair, body hair, chest hair, breast hair, peli sul seno.
+        female face, woman, girl, young, unrealistic skin, long feminine hair, body hair, chest hair, breast hair, peli sul seno, static pose, mannequin pose.
         """
 
         response = client.models.generate_content(model=GEN_MODEL,
@@ -144,7 +146,6 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
 @bot.message_handler(func=lambda m: m.reply_to_message is not None and m.text is not None)
 def handle_reply_edit(m):
     uid = m.from_user.id
-    # SCARICA L'IMMAGINE ATTUALE (quella a cui l'utente sta rispondendo)
     target_msg = m.reply_to_message
     file_id = None
     if target_msg.document: file_id = target_msg.document.file_id
@@ -154,8 +155,6 @@ def handle_reply_edit(m):
         bot.reply_to(m, "🔄 Elaborazione modifica sull'immagine corrente...")
         file_info = bot.get_file(file_id)
         current_img_bytes = bot.download_file(file_info.file_path)
-        
-        # Recuperiamo l'analisi tecnica dell'outfit originale se disponibile
         vision_context = original_outfit_analysis.get(uid, "High-fashion ensemble.")
         
         def run_edit():
@@ -171,10 +170,10 @@ def handle_new_photo(m):
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
     
-    # Analisi tecnica iniziale dell'abito caricato
-    vision_desc = analyze_outfit_vision(img_bytes)
-    original_outfit_analysis[uid] = vision_desc # Memorizziamo il contesto dell'abito
+    bot.reply_to(m, f"🔍 Analisi Vogue e produzione di {qty} scatti (Formato {fmt}) in corso...")
     
+    vision_desc = analyze_outfit_vision(img_bytes)
+    original_outfit_analysis[uid] = vision_desc
     bot.send_message(m.chat.id, f"📝 <b>Analisi Vogue:</b> <i>{vogue_sanitize(vision_desc)}</i>")
     
     for i in range(qty):
@@ -186,9 +185,9 @@ def handle_new_photo(m):
 
 app = flask.Flask(__name__)
 @app.route('/')
-def h(): return "Bot Online - V2.18"
+def h(): return "Bot Online - V2.20 (Pose Unlocked)"
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
     bot.infinity_polling()
-    
+        
