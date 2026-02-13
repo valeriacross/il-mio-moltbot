@@ -13,90 +13,74 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("CLOSET_TOKEN")
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 
+if not TOKEN or not API_KEY:
+    raise ValueError("🚨 CLOSET_TOKEN o GOOGLE_API_KEY mancanti su Render!")
+
 client = genai.Client(api_key=API_KEY)
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# Usiamo Pro per l'analisi (più intelligente) e Nano per la generazione (più veloce/creativo)
+# Modelli: Pro per l'analisi (Vede meglio), Nano per la generazione (Più veloce)
 VISION_MODEL = "gemini-1.5-pro" 
 GEN_MODEL = "nano-banana-pro-preview"
 
 executor = ThreadPoolExecutor(max_workers=2)
+user_ar = defaultdict(lambda: "2:3")
 
-# --- THE VOGUE SHIELD (Sanitizzazione testuale) ---
+# --- THE VOGUE SHIELD (IT / EN / PT) ---
 def vogue_sanitize(text):
     if not text: return ""
     euphemisms = {
-        r"\b(bra|reggiseno|sutiã)\b": "luxury bralette",
-        r"\b(underwear|panties|calcinha)\b": "silk intimate set",
+        r"\b(bra|reggiseno|soutien|sutiã)\b": "luxury bralette",
+        r"\b(underwear|mutande|panties|calcinha|cueca)\b": "intimate silk apparel",
         r"\b(thong|perizoma|fio dental)\b": "minimalist couture bottom",
-        r"\b(nude|nudo|nu)\b": "natural skin texture",
-        r"\b(cleavage|decote)\b": "glamorous decolletage",
-        r"\b(breast|seno|seios)\b": "feminine torso silhouette",
-        r"\b(sexy|hot|quente)\b": "alluring and sophisticated",
-        r"\b(see-through|trasparente)\b": "sheer translucent fabric",
+        r"\b(nude|nudo|nu|nua)\b": "natural skin texture",
+        r"\b(cleavage|scollatura|decote)\b": "glamorous decolletage",
+        r"\b(breast|seno|seios|peito)\b": "feminine torso silhouette",
+        r"\b(butt|booty|culo|bumbum|rabo)\b": "lower silhouette",
+        r"\b(see-through|trasparente|transparente)\b": "sheer translucent fabric",
+        r"\b(sexy|hot|quente|seducente)\b": "alluring and sophisticated",
+        r"\b(mini skirt|minigonna|minissaia)\b": "high-fashion mini skirt",
+        r"\b(bikini|costume)\b": "high-fashion swimwear set",
     }
     sanitized = text.lower()
     for pattern, replacement in euphemisms.items():
         sanitized = re.sub(pattern, replacement, sanitized)
     return sanitized.capitalize()
 
-# --- STEP 1: L'ANALIZZATORE VISIVO ---
+# --- ANALIZZATORE VISIVO ---
 def analyze_outfit_vision(img_bytes):
-    """Analizza l'immagine e restituisce una descrizione tecnica Safe."""
     try:
-        prompt = """
-        You are a high-fashion technical stylist for Vogue. 
-        Analyze the clothing in the image. Describe ONLY the garment: materials, exact cut, 
-        texture, patterns, and colors. 
-        IGNORE the model's body, face, and pose. 
-        Provide a professional description (max 60 words) using technical fashion terms.
-        Ensure the description is 'Safe for Work' and editorial in tone.
-        """
-        
+        prompt = "Describe ONLY the clothing in this image: materials, cut, texture, and colors. Ignore the person. Use high-fashion technical terms. Max 50 words."
         response = client.models.generate_content(
             model=VISION_MODEL,
-            contents=[
-                prompt,
-                genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-            ]
+            contents=[prompt, genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")]
         )
-        return response.text if response.text else ""
+        return response.text if response.text else "High-fashion garment."
     except Exception as e:
-        logger.error(f"❌ Errore Vision: {e}")
-        return ""
+        logger.error(f"Vision Error: {e}")
+        return "Editorial outfit."
 
-# --- CARICAMENTO IDENTITÀ ---
-def get_face_part():
-    file_path = "master_face.png"
-    if not os.path.exists(file_path): return None
+# --- GENERAZIONE ---
+def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc):
     try:
-        with open(file_path, "rb") as f:
-            return genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
-    except: return None
+        # Carica il volto di Walter (Identity)
+        if not os.path.exists("master_face.png"): return None, "Face file missing"
+        with open("master_face.png", "rb") as f:
+            face_part = genai_types.Part.from_bytes(data=f.read(), mime_type="image/png")
 
-MASTER_PART = get_face_part()
+        safe_context = vogue_sanitize(f"{vision_desc} {user_notes}")
 
-# --- STEP 2: GENERAZIONE FINALE ---
-def generate_closet_task(img_outfit_bytes, ar_scelto, user_notes="", vision_description=""):
-    try:
-        if not MASTER_PART: return None, "Identità mancante."
-
-        # Combiniamo l'analisi visiva con le note dell'utente e passiamo tutto nello scudo
-        full_context = f"{vision_description} {user_notes}"
-        safe_context = vogue_sanitize(full_context)
-
-        system_instructions = f"""
-        ROLE: Expert Vogue photographer. Fictional fashion catalog.
-        SUBJECT: Valeria Cross (60yo, male face, beard, glasses, female D-cup body, hairless).
+        system_prompt = f"""
+        ROLE: Expert Vogue photographer. Fictional professional editorial.
+        SUBJECT: Valeria Cross (60yo male face, grey beard, glasses, female D-cup body, hairless).
         OUTFIT DESCRIPTION: {safe_context}
-        TECHNICAL: 8K, 85mm, f/2.8. Professional studio lighting.
+        TECHNICAL: 8K, 85mm, f/2.8. Professional studio lighting. 
         """
 
         contents = [
-            f"{system_instructions}\n\nFORMATO: {ar_scelto}\n\nNEGATIVE: female face, young, body hair, peli.",
-            MASTER_PART,
-            # Passiamo l'immagine originale come riferimento visivo
-            genai_types.Part.from_bytes(data=img_outfit_bytes, mime_type="image/jpeg")
+            f"{system_prompt}\n\nFORMATO: {ar_scelto}\n\nNEGATIVE: female face, young, body hair, peli, nsfw.",
+            face_part,
+            genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
         ]
 
         response = client.models.generate_content(
@@ -114,34 +98,44 @@ def generate_closet_task(img_outfit_bytes, ar_scelto, user_notes="", vision_desc
         return None, f"Blocco: {getattr(response.candidates[0], 'finish_reason', 'Sconosciuto')}"
     except Exception as e: return None, str(e)
 
-# --- INTERFACCIA ---
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
-user_ar = defaultdict(lambda: "2:3")
+# --- BOT LOGIC ---
+@bot.message_handler(commands=['start', 'settings'])
+def settings(m):
+    markup = types.InlineKeyboardMarkup()
+    markup.row(types.InlineKeyboardButton("2:3 🖼️", callback_data="ar_2:3"), types.InlineKeyboardButton("3:2 📷", callback_data="ar_3:2"))
+    bot.send_message(m.chat.id, "<b>👗 Valeria Closet Bot Safety+</b>", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def cb(call):
+    if "ar_" in call.data: user_ar[call.from_user.id] = call.data.replace("ar_", "")
+    bot.answer_callback_query(call.id, "OK")
 
 @bot.message_handler(content_types=['photo'])
 def handle_outfit(m):
-    uid = m.from_user.id
-    fmt = user_ar[uid]
+    fmt = user_ar[m.from_user.id]
     caption = m.caption if m.caption else ""
-    
     bot.reply_to(m, "🔍 Analisi stilistica in corso...")
     
     file_info = bot.get_file(m.photo[-1].file_id)
     img_bytes = bot.download_file(file_info.file_path)
 
-    # 1. Analisi (Step "Lavaggio")
-    vision_desc = analyze_outfit_vision(img_bytes)
-    
-    bot.reply_to(m, f"👗 <b>Scheda tecnica generata:</b>\n<i>{vision_desc[:150]}...</i>\n\n🚀 Generazione in corso...")
-
-    # 2. Generazione
-    def run_task():
+    def run():
+        vision_desc = analyze_outfit_vision(img_bytes)
+        bot.send_message(m.chat.id, f"👗 <b>Analisi:</b> <i>{vogue_sanitize(vision_desc)}</i>")
         res, err = generate_closet_task(img_bytes, fmt, caption, vision_desc)
         if res:
             bot.send_document(m.chat.id, io.BytesIO(res), visible_file_name="valeria_outfit.jpg")
         else:
-            bot.send_message(m.chat.id, f"❌ Errore: {err}")
+            bot.send_message(m.chat.id, f"❌ {err}")
 
-    executor.submit(run_task)
+    executor.submit(run)
 
-# (Aggiungi qui il resto del codice Flask e polling come prima)
+# --- FLASK ---
+app = flask.Flask(__name__)
+@app.route('/')
+def h(): return "Bot Online"
+
+if __name__ == "__main__":
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
+    bot.infinity_polling()
+    
