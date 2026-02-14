@@ -135,7 +135,8 @@ def generate_closet_task(img_bytes, ar_scelto, user_notes, vision_desc, edit_mod
         Impostazioni fotografiche
         Risoluzione 8K, obiettivo 85mm, f/2.8, ISO 200, shutter 1/160, bokeh naturale, finish glossy iper-dettagliato.
         FORMATO RICHIESTO: {ar_scelto}
-
+        WATERMARK: Mandatory text "feat. Valeria Cross 👠" in elegant very small cursive champagne color at bottom center/left.
+        
         Prompt negativo fisso:
         female face, woman, girl, young, unrealistic skin, long feminine hair, body hair, chest hair, breast hair, peli sul seno, static pose, mannequin pose.
         """
