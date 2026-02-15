@@ -128,7 +128,7 @@ def generate_closet_task_v3(img_bytes, ar_scelto, user_notes, vision_desc, mode=
         [BLOCCO 4: OUTPUT CONTROL]
         Anti-Faceswap: Do NOT collage. Generate native pixels. 
         Cohesion: Integrate male face with the environment lighting ({safe_outfit}).
-        Watermark: "feat. Valeria Cross 👠" (elegant cursive, champagne color, bottom left, 90% opacity).
+        Watermark: "feat. Valeria Cross 👠" (elegant cursive, very small, champagne color, bottom left, 90% opacity).
         Format: {ar_scelto}.
 
         PROMPT: {mode_instruction} {safe_notes}
