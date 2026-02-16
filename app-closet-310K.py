@@ -30,7 +30,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 # --- MODELLI (Nomi puliti per v1beta) ---
 VISION_MODEL = "gemini-1.5-flash"
-GEN_MODEL = "gemini-2.5-flash-preview-image"
+GEN_MODEL = "gemini-1.5-pro"
 
 executor = ThreadPoolExecutor(max_workers=8)
 user_ar = defaultdict(lambda: "2:3")
