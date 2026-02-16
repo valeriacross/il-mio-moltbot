@@ -24,7 +24,7 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 # Koyeb assegna una porta dinamica, la leggiamo qui (default 10000)
 PORT = int(os.environ.get("PORT", 10000))
 
-client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=API_KEY, http_options={'api_version': 'v1beta'})
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 # --- MOTORI AD ALTA QUOTA (500 RPM) ---
