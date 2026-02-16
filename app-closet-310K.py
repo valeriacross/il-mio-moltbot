@@ -1,8 +1,8 @@
 # ---------------------------------------------------------
-# VERSION: V3.20 (Koyeb & v1beta - Nano Banana)
+# VERSION: V3.2.1 (Koyeb & v1beta - Nano Banana Pro)
 # TIMESTAMP: 2026-02-16
 # PLATFORM: Koyeb (Eco/Starter Instance)
-# FIX: Explicit v1beta routing for Gemini 2.5
+# FIX: Model name 'nano-banana-pro-preview' + Dynamic Msg
 # ---------------------------------------------------------
 
 import os, io, threading, logging, flask, telebot, re
@@ -20,7 +20,7 @@ TOKEN = os.environ.get("CLOSET_TOKEN")
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 PORT = int(os.environ.get("PORT", 10000))
 
-# --- CLIENT FORZATO SU v1beta (Necessario per modelli Preview) ---
+# --- CLIENT FORZATO SU v1beta ---
 client = genai.Client(
     api_key=API_KEY, 
     http_options={'api_version': 'v1beta'}
@@ -28,7 +28,7 @@ client = genai.Client(
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# --- MODELLI (Nomi puliti per v1beta) ---
+# --- MODELLI (Configurazione confermata funzionante) ---
 VISION_MODEL = "gemini-1.5-flash"
 GEN_MODEL = "nano-banana-pro-preview"
 
@@ -120,7 +120,7 @@ def show_settings(m):
     qty_buttons = [types.InlineKeyboardButton(f"{'✅ ' if user_qty[m.from_user.id]==q else ''}{q} Foto", callback_data=f"set_qty_{q}") for q in [1, 2, 4]]
     markup.add(*ar_buttons)
     markup.add(*qty_buttons)
-    bot.send_message(m.chat.id, "<b>👠 Valeria Closet V3.2 (Koyeb)</b>\nEngine: Nano Banana (v1beta)", reply_markup=markup)
+    bot.send_message(m.chat.id, "<b>👠 Valeria Closet V3.2.1 (Koyeb)</b>\nEngine: Nano Banana Pro (v1beta)", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("set_"))
 def handle_settings_cb(call):
@@ -132,11 +132,14 @@ def handle_settings_cb(call):
 @bot.message_handler(content_types=['photo'])
 def handle_new_photo(m):
     uid = m.from_user.id
+    qty, fmt = user_qty[uid], user_ar[uid]
+    
     img_bytes = bot.download_file(bot.get_file(m.photo[-1].file_id).file_path)
-    bot.reply_to(m, "⚡ Analisi e Rendering in corso (v1beta)...")
+    
+    # Messaggio dinamico richiesto
+    bot.reply_to(m, f"⚡ Analisi e Rendering in corso (v1beta)...\n📸 Attese: {qty} foto | Formato: {fmt}")
     
     vision_desc = analyze_outfit_vision(img_bytes)
-    qty, fmt = user_qty[uid], user_ar[uid]
     
     for i in range(qty):
         def run(idx):
