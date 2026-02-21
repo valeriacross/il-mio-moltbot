@@ -6,7 +6,8 @@ import pytz
 
 # --- CONFIG ---
 VERSION = "3.4"
-TOKEN = os.environ.get("TELEGRAM_TOKEN_CLOSET")
+# Nome variabile allineato a screenshot image_caedfa.png
+TOKEN = os.environ.get("TELEGRAM_TOKEN_CLOSET") 
 client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
@@ -40,7 +41,6 @@ def handle_closet(m):
         final_prompt = f"{B1}\n\n{B2}\n\n{B3}\n\nSCENE: {scena}\n\n{B4}\n\n{NEG}"
         
         now = datetime.now(pytz.timezone('Europe/Lisbon')).strftime("%H:%M")
-        # --- HEADER CORRETTO ---
         header = f"📂 <b>CLOSET v{VERSION}</b> | {now}\n--------------------------\n\n"
         full_msg = header + final_prompt
 
@@ -60,3 +60,4 @@ def health(): return "CLOSET_OK"
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000), daemon=True).start()
     bot.infinity_polling()
+    
