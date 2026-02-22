@@ -116,7 +116,7 @@ def generate_closet(m):
         
         # 2. Genera l'immagine chiamando il modello Nano Banana Pro
         result = client.models.generate_images(
-            model='gemini-3-pro-image-preview',
+            model='nano-banana-pro-preview',
             prompt=final_prompt,
             config=genai_types.GenerateImagesConfig(
                 number_of_images=settings['count'],
