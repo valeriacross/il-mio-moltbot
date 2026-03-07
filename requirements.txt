@@ -1,4 +1,5 @@
-google-genai
-pyTelegramBotAPI
-flask
+pyTelegramBotAPI==4.14.0
+flask==3.0.0
+Pillow>=10.0.0
+google-genai>=0.3.0
 pytz
