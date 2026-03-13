@@ -83,6 +83,7 @@ SORPRESA (E)  = 🎲 Random 14 variabili → {Immagine generata} (T2I)
 
 ### Formato API (21:9 rimane riservato a FX Stereo in ValeriaFX)
 Auto, 1:1, 9:16, 16:9, 3:4, 4:3, 3:2, 5:4, 4:5, 21:9, 4:1, 1:4, 8:1, 1:8
+Nota: 2:3 non compare nella lista ufficiale AI Studio ma è accettato dall'API e funzionante — è il formato default di Sorpresa.
 
 ### Flow
 1. `/start` → 🎲 Tira i dadi!
